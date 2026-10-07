@@ -80,7 +80,7 @@ id = "BUG-204-5"
 target = "Recent-files list honours recent_file_count (default 20)"
 status = "done"
 issue = 204
-note = "crates/ui-egui/src/lib.rs:528-546 reads recent_file_count through recent_cap; menus.rs covers default and custom limits"
+note = "lib.rs push_recent caps the list with recent_cap (recent_file_count); menus.rs covers default and custom limits"
 
 [[item]]
 id = "BUG-204-6"
@@ -199,21 +199,21 @@ id = "BUG-208-1"
 target = "Shift while dragging a Rect/Elliptical Marquee constrains to a square/circle"
 status = "done"
 issue = 208
-note = "canvas.rs:94-96 applies Shift constraints; marquee_tests.rs::shift_during_the_drag_draws_a_square_and_the_readout_follows covers the drag"
+note = "canvas.rs marquee_corners applies Shift via Drag::marquee_mods; marquee_tests.rs::shift_during_the_drag_draws_a_square_and_the_readout_follows covers the drag"
 
 [[item]]
 id = "BUG-208-2"
 target = "Alt while dragging a marquee draws from the centre"
 status = "done"
 issue = 208
-note = "canvas.rs:94-103 centres Alt drags; marquee_tests.rs::alt_draws_from_the_centre_and_shift_alt_a_centred_circle verifies rectangles and ellipses"
+note = "canvas.rs marquee_corners centres Alt drags; marquee_tests.rs::alt_draws_from_the_centre_and_shift_alt_a_centred_circle verifies rectangles and ellipses"
 
 [[item]]
 id = "BUG-208-3"
 target = "W x H px readout beside the cursor while dragging a marquee"
 status = "done"
 issue = 208
-note = "canvas.rs:111-119 draws the readout; marquee_tests.rs asserts dimensions while dragging and its removal after release"
+note = "canvas.rs marquee_readout draws the readout; marquee_tests.rs asserts dimensions while dragging and its removal after release"
 
 [[item]]
 id = "BUG-208-4"
