@@ -13,6 +13,8 @@
 //!   if it does anyway, the save fails with a clear error. It never falls back to writing the
 //!   destination in place.
 //! - **Unwritable folder:** the save fails with a clear error instead of writing in place.
+//! - **Symlinks:** writes follow the destination link. If it cannot be resolved (e.g. a dangling
+//!   link or a loop), the save fails without replacing the link.
 //!
 //! On the web there is no file system: writes go through the platform services (downloads), so
 //! this module is never reached there; on `wasm32` every call returns the `std` "unsupported"
@@ -100,7 +102,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 /// [`atomic_write`] through an explicit file system and retry policy (the failure-injection seam).
 pub fn atomic_write_with(fs: &dyn AtomicFs, retry: RenameRetry, path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let target = resolve_symlink(path);
+    let target = resolve_symlink(path).map_err(|e| context(e, format!("cannot resolve {} for saving; {UNCHANGED}", path.display())))?;
     let name = target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("{}: not a file path", path.display())))?;
     let dir = match target.parent() {
         Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
@@ -168,10 +170,12 @@ fn sleep_ms(ms: u64) {
 fn sleep_ms(_ms: u64) {}
 
 /// Write through a symlink to the file it points at, instead of replacing the link.
-fn resolve_symlink(path: &Path) -> PathBuf {
+fn resolve_symlink(path: &Path) -> io::Result<PathBuf> {
     match std::fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_symlink() => std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()),
-        _ => path.to_path_buf(),
+        Ok(m) if m.file_type().is_symlink() => std::fs::canonicalize(path),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(e) => Err(e),
     }
 }
 
@@ -179,8 +183,16 @@ fn resolve_symlink(path: &Path) -> PathBuf {
 pub fn temp_name(file: &str) -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    // Keep the name short: a long file name plus the suffix must stay under NAME_MAX.
-    let stem: String = file.chars().take(64).collect();
+    // NAME_MAX is a byte limit on Unix. Keep complete UTF-8 characters, but budget
+    // bytes so a multibyte file name still leaves room for the unique suffix.
+    let mut bytes = 0;
+    let stem: String = file
+        .chars()
+        .take_while(|c| {
+            bytes += c.len_utf8();
+            bytes <= 64
+        })
+        .collect();
     format!(".{stem}.{}-{n}.pcsave.tmp", std::process::id())
 }
 
