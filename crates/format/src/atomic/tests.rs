@@ -203,6 +203,52 @@ fn writes_through_a_symlink() {
     assert_eq!(std::fs::read(&real).unwrap(), b"new");
 }
 
+#[cfg(unix)]
+#[test]
+fn dangling_symlink_errors_without_replacing_the_link() {
+    let d = TempDir::new("dangling-link");
+    let link = d.0.join("link.psd");
+    let target = Path::new("missing.psd");
+    std::os::unix::fs::symlink(target, &link).unwrap();
+
+    let e = atomic_write(&link, b"new").unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::NotFound);
+    assert!(e.to_string().contains("not changed"), "{e}");
+    assert_eq!(std::fs::read_link(&link).unwrap(), target);
+    assert!(!d.0.join(target).exists());
+    assert_no_temp(&d.0);
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_loop_errors_without_replacing_either_link() {
+    let d = TempDir::new("link-loop");
+    let first = d.0.join("first.psd");
+    let second = d.0.join("second.psd");
+    std::os::unix::fs::symlink("second.psd", &first).unwrap();
+    std::os::unix::fs::symlink("first.psd", &second).unwrap();
+
+    let e = atomic_write(&first, b"new").unwrap_err();
+    assert!(e.to_string().contains("not changed"), "{e}");
+    assert_eq!(std::fs::read_link(&first).unwrap(), Path::new("second.psd"));
+    assert_eq!(std::fs::read_link(&second).unwrap(), Path::new("first.psd"));
+    assert_no_temp(&d.0);
+}
+
+#[test]
+fn saves_long_unicode_filenames() {
+    let d = TempDir::new("unicode");
+    // Both names fit within a 255-byte filename limit. The mixed name also puts a
+    // multibyte character across the temporary stem's 64-byte boundary.
+    for stem in ["🎨".repeat(60), format!("{}{}", "a".repeat(63), "🎨".repeat(40))] {
+        let p = d.0.join(format!("{stem}.psd"));
+        std::fs::write(&p, ORIGINAL).unwrap();
+        atomic_write(&p, b"new").unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"new");
+    }
+    assert_no_temp(&d.0);
+}
+
 #[test]
 fn directory_target_or_bare_root_is_an_error_not_a_panic() {
     let d = TempDir::new("dir");
